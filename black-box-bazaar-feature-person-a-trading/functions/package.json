@@ -1,0 +1,24 @@
+{
+  "name": "functions",
+  "description": "Black Box Bazaar trusted backend - Firebase Cloud Functions",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "seed:credential": "node scripts/seedTeamCredential.js",
+    "validate:seed": "node scripts/validateSeedData.js",
+    "seed:event": "node scripts/seedEventData.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "firebase-admin": "^14.2.0",
+    "firebase-functions": "^7.3.2"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2"
+  }
+}

@@ -1,0 +1,256 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /*
+     * ============================================================
+     * BLACK BOX BAZAAR — FIRESTORE SECURITY RULES
+     * ============================================================
+     *
+     * Architecture:
+     *
+     *   Client
+     *      ↓
+     *   Firebase Authentication
+     *      ↓
+     *   Firestore Security Rules
+     *      ↓
+     *   Read permitted data
+     *
+     * Protected writes are performed by trusted backend logic.
+     *
+     * Player authorization identity:
+     *
+     *   request.auth.token.teamId
+     *
+     * Admin authorization:
+     *
+     *   request.auth.token.admin == true
+     *
+     * IMPORTANT:
+     * Firebase Admin SDK / trusted server code bypasses Firestore
+     * Security Rules. Backend functions are therefore responsible
+     * for validating game rules before performing protected writes.
+     */
+
+
+    // ============================================================
+    // AUTHENTICATION HELPERS
+    // ============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated()
+        && request.auth.token.admin == true;
+    }
+
+    function hasTeam() {
+      return isAuthenticated()
+        && request.auth.token.teamId != null;
+    }
+
+    function currentTeamId() {
+      return request.auth.token.teamId;
+    }
+
+
+    // ============================================================
+    // TEAMS
+    // ============================================================
+
+    match /teams/{teamId} {
+
+      /*
+       * A player may read only their own team's public/permitted
+       * team document.
+       *
+       * The team PIN must never be stored in this document.
+       */
+      allow read: if hasTeam()
+        && currentTeamId() == teamId;
+
+      /*
+       * Team data is protected.
+       *
+       * Score, BitBucks, team identity, etc. must be changed only
+       * through trusted backend/admin logic.
+       */
+      allow write: if false;
+    }
+
+
+    // ============================================================
+    // CARDS
+    // ============================================================
+
+    match /cards/{cardId} {
+
+      /*
+       * A player may read a card only when they currently own it.
+       *
+       * Marketplace/public card visibility can be handled through
+       * listings rather than exposing all card ownership data.
+       */
+      allow read: if hasTeam()
+        && resource.data.currentOwner == currentTeamId();
+
+      /*
+       * Card ownership and card configuration are protected.
+       *
+       * Backend logic performs ownership changes after a valid trade.
+       */
+      allow write: if false;
+    }
+
+
+    // ============================================================
+    // ANSWER KEYS
+    // ============================================================
+
+    match /answerKeys/{cardId} {
+
+      /*
+       * NEVER expose answer keys to players.
+       *
+       * Answer validation is performed by trusted backend logic.
+       */
+      allow read, write: if false;
+    }
+
+
+    // ============================================================
+    // MARKETPLACE LISTINGS
+    // ============================================================
+
+    match /listings/{listingId} {
+
+      /*
+       * Authenticated players may view marketplace listings.
+       *
+       * The listing document must not contain protected answer data.
+       */
+      allow read: if isAuthenticated();
+
+      /*
+       * Listing creation, cancellation, and completion are handled
+       * through trusted backend functions.
+       */
+      allow write: if false;
+    }
+
+
+    // ============================================================
+    // TRADES
+    // ============================================================
+
+    match /trades/{tradeId} {
+
+      /*
+       * A player may read a trade only when they are involved in it.
+       *
+       * This prevents one team from inspecting another team's
+       * private trade details.
+       */
+      allow read: if hasTeam()
+        && (
+          resource.data.buyerId == currentTeamId()
+          || resource.data.sellerId == currentTeamId()
+        );
+
+      /*
+       * Trade creation, confirmation, cancellation, completion,
+       * and reversal must happen through trusted backend logic.
+       */
+      allow write: if false;
+    }
+
+
+    // ============================================================
+    // SUBMISSIONS
+    // ============================================================
+
+    match /submissions/{submissionId} {
+
+      /*
+       * A team may read its own submissions.
+       *
+       * Admins can inspect submissions through trusted admin logic.
+       */
+      allow read: if (
+        hasTeam()
+        && resource.data.teamId == currentTeamId()
+      ) || isAdmin();
+
+      /*
+       * Players do not directly create or modify submissions.
+       *
+       * The backend validates:
+       * - authentication
+       * - team identity
+       * - card ownership
+       * - ownership instance
+       * - game phase
+       * - duplicate submissions
+       * - answer eligibility
+       */
+      allow write: if false;
+    }
+
+
+    // ============================================================
+    // GAME STATE
+    // ============================================================
+
+    match /game/{gameId} {
+
+      /*
+       * Authenticated players may read game state.
+       */
+      allow read: if isAuthenticated();
+
+      /*
+       * Game phase changes are protected.
+       */
+      allow write: if false;
+    }
+
+
+    // ============================================================
+    // ACTIVITY LOGS
+    // ============================================================
+
+    match /activityLogs/{logId} {
+
+      /*
+       * Activity logs are administrative/audit data.
+       *
+       * Players must not access the complete audit log.
+       */
+      allow read, write: if false;
+    }
+    // ============================================================
+    // CREDENTIALS
+    // ============================================================
+
+    match /teamCredentials/{teamId} {
+      allow read, write: if false;
+    }
+
+
+    // ============================================================
+    // DEFAULT DENY
+    // ============================================================
+
+    /*
+     * Any collection/document not explicitly defined above is
+     * inaccessible.
+     */
+        match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
